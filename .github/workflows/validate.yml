@@ -13,9 +13,26 @@ jobs:
 
       # The validator is the tool itself — the same strict schemas and the same
       # security scan a contributor runs locally. Never a reimplementation.
+      # indieops-co/tastepilot is private, as a sold Skilllet's repo must be, so
+      # the default GITHUB_TOKEN cannot read it — it is scoped to this repository
+      # alone. A fine-grained PAT with Contents:read on indieops-co/tastepilot,
+      # stored here as TASTEPILOT_ENGINE_TOKEN, is what makes this checkout work.
+      - name: The engine token is present
+        env:
+          TOKEN: ${{ secrets.TASTEPILOT_ENGINE_TOKEN }}
+        run: |
+          [ -n "$TOKEN" ] || {
+            echo "::error::TASTEPILOT_ENGINE_TOKEN is not set. The validator lives in"
+            echo "::error::the private repo indieops-co/tastepilot and cannot be checked"
+            echo "::error::out without it. Add a fine-grained PAT with Contents:read on"
+            echo "::error::that repo as an Actions secret named TASTEPILOT_ENGINE_TOKEN."
+            exit 1
+          }
+
       - uses: actions/checkout@v4
         with:
           repository: indieops-co/tastepilot
+          token: ${{ secrets.TASTEPILOT_ENGINE_TOKEN }}
           path: .tastepilot
 
       - uses: pnpm/action-setup@v4

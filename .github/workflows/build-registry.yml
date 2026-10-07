@@ -1,0 +1,94 @@
+name: Build registry
+
+# Manual only, on purpose. What strangers install Canons from is not something a
+# merge should change as a side effect, and the first run wants a human watching.
+#
+# The registry is served from https://indieops.co/tastepilot/canon, so the three
+# paths the client asks for are:
+#
+#   https://indieops.co/tastepilot/canon/canons.json
+#   https://indieops.co/tastepilot/canon/canons/<id>.json
+#   https://indieops.co/tastepilot/canon/canons/<id>/<version>.json
+#
+# This validates, builds and proves the registry, then uploads it as an artifact.
+# Handing that artifact to indieops-co/indieops-site is the step still to wire;
+# it needs a token that can write there, so it is absent rather than half-done.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-registry
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: The engine token is present
+        env:
+          TOKEN: ${{ secrets.TASTEPILOT_ENGINE_TOKEN }}
+        run: |
+          [ -n "$TOKEN" ] || {
+            echo "::error::TASTEPILOT_ENGINE_TOKEN is not set. See validate.yml."
+            exit 1
+          }
+
+      # Validation is not assumed from CI having passed earlier: a manual dispatch
+      # can run against any ref, so the gate runs here too. The validator is the
+      # tool itself, never a reimplementation.
+      - uses: actions/checkout@v4
+        with:
+          repository: indieops-co/tastepilot
+          token: ${{ secrets.TASTEPILOT_ENGINE_TOKEN }}
+          path: .tastepilot
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: .tastepilot/tastepilot/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+        working-directory: .tastepilot/tastepilot
+
+      - name: Validate — schema and security scan
+        run: |
+          failed=0
+          for dir in canons/*/; do
+            echo "→ $dir"
+            pnpm --dir .tastepilot/tastepilot dev canon validate "$PWD/$dir" || failed=1
+          done
+          exit $failed
+
+      - name: Build the static registry
+        run: node scripts/build-registry.mjs
+
+      # Nothing is published that the real client cannot read.
+      - name: A static file server is a working registry
+        run: |
+          python3 -m http.server 8765 --bind 127.0.0.1 --directory registry &
+          server=$!
+          sleep 2
+          TASTEPILOT_CANON_URL=http://127.0.0.1:8765 \
+            pnpm --dir .tastepilot/tastepilot dev canons | tee /tmp/canons.txt
+          kill $server
+          for dir in canons/*/; do
+            id=$(basename "$dir")
+            grep -q "^$id .*community" /tmp/canons.txt || {
+              echo "::error::$id is missing from the registry listing"
+              exit 1
+            }
+          done
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: registry
+          path: registry/
+          if-no-files-found: error

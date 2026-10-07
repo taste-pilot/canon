@@ -48,10 +48,11 @@ tastepilot canons                      # it now appears as a "local" source
 
 Then art-direct with it as you would any bundled style: *Make it beautiful using Newsprint Broadsheet.*
 
-Once a registry is published, the same Canons will be reachable without cloning:
+The registry is served from `https://indieops.co/tastepilot/canon`. Once it is
+live, the same Canons install without cloning:
 
 ```bash
-export TASTEPILOT_CANON_URL=https://<the published registry>
+export TASTEPILOT_CANON_URL=https://indieops.co/tastepilot/canon
 tastepilot canon install newsprint-broadsheet@1.0.0
 ```
 
